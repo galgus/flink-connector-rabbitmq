@@ -1,6 +1,7 @@
 package net.galgus.flink.streaming.connectors.rabbitmq;
 
 import com.rabbitmq.client.*;
+import net.galgus.flink.streaming.connectors.rabbitmq.custom.OnDeserialize;
 import net.galgus.flink.streaming.connectors.rabbitmq.common.RMQConnectionConfig;
 import org.apache.flink.api.common.functions.RuntimeContext;
 import org.apache.flink.api.common.serialization.DeserializationSchema;
@@ -14,51 +15,52 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 public class RMQSource<OUT> extends MultipleIdsMessageAcknowledgingSourceBase<OUT, String, Long> implements ResultTypeQueryable<OUT> {
     private final static Logger log = LoggerFactory.getLogger(RMQSource.class);
 
     private final RMQConnectionConfig rmqConnectionConfig;
-    protected final String queueName;
+
     private final boolean usesCorrelationId;
     protected DeserializationSchema<OUT> deserializationSchema;
     
     protected transient Connection connection;
     protected transient Channel channel;
     
+    protected String queueName;
+    
     protected transient boolean autoAck;
     
     private transient volatile boolean running;
     
-    private DeliverCallback deliverCallback;     
-    
     private transient Object waitLock;
-    
-    public RMQSource(RMQConnectionConfig rmqConnectionConfig, String queueName, 
-                     DeserializationSchema<OUT> deserializationSchema) {
-        this(rmqConnectionConfig, queueName, false, deserializationSchema);
-    }
-    
-    public RMQSource(RMQConnectionConfig rmqConnectionConfig, String queueName, boolean usesCorrelationId, 
-                     DeserializationSchema<OUT> deserializationSchema) {
+
+    public RMQSource(RMQConnectionConfig rmqConnectionConfig, String queueName, boolean usesCorrelationId,
+                     DeserializationSchema<OUT> deserializationSchema, OnDeserialize onDeserialize) {
         super(String.class);
         
-        this.rmqConnectionConfig = rmqConnectionConfig;
         this.queueName = queueName;
+        this.rmqConnectionConfig = rmqConnectionConfig;
         this.usesCorrelationId = usesCorrelationId;
         this.deserializationSchema = deserializationSchema;
     }
+    
+    public RMQSource(RMQConnectionConfig rmqConnectionConfig, String queueName, 
+                     DeserializationSchema deserializationSchema, OnDeserialize onDeserialize) {
+        this(rmqConnectionConfig, queueName,false, deserializationSchema, onDeserialize);
+    }
+
+    public RMQSource(RMQConnectionConfig rmqConnectionConfig, String queueName,
+                     DeserializationSchema deserializationSchema) {
+        this(rmqConnectionConfig, queueName, deserializationSchema,null);
+    }
+   
     
     protected ConnectionFactory setupConnectionFactory() throws Exception {
         return rmqConnectionConfig.getConnectionFactory();
     }
     
-    protected void setupQueue() throws IOException {
-        channel.queueDeclare(queueName, true, false, false, null);
-    }
-
     @Override
     public void open(Configuration config) throws Exception {
         super.open(config);
@@ -72,8 +74,8 @@ public class RMQSource<OUT> extends MultipleIdsMessageAcknowledgingSourceBase<OU
             channel = connection.createChannel();
             
             if (channel == null) throw new RuntimeException("None of RabbitMQ channels are available");
-
-            setupQueue();
+            
+            queueName = rmqConnectionConfig.getSetupChannel().setupChannel(channel, queueName);
             
             RuntimeContext runtimeContext = getRuntimeContext();
             if (runtimeContext instanceof StreamingRuntimeContext 
@@ -87,7 +89,7 @@ public class RMQSource<OUT> extends MultipleIdsMessageAcknowledgingSourceBase<OU
             
             log.debug("Starting RabbitMQ source with autoAck status: " + autoAck);
         } catch (IOException e) {
-            throw new RuntimeException("Cannot create RMQ connection with " + queueName + " at " + rmqConnectionConfig.getHost(), e);
+            throw new RuntimeException("Cannot create RMQ connection at " + rmqConnectionConfig.getHost(), e);
         }
         
         running = true;
@@ -99,7 +101,7 @@ public class RMQSource<OUT> extends MultipleIdsMessageAcknowledgingSourceBase<OU
         try {
             if (connection != null) connection.close();
         } catch (IOException e) {
-            throw new RuntimeException("Error while closing RMQ connection with " + queueName + " at " + rmqConnectionConfig.getHost(), e);
+            throw new RuntimeException("Error while closing RMQ connection at " + rmqConnectionConfig.getHost(), e);
         }
         
         synchronized (waitLock) {
@@ -124,10 +126,12 @@ public class RMQSource<OUT> extends MultipleIdsMessageAcknowledgingSourceBase<OU
     
     @Override
     public void run(SourceContext<OUT> sourceContext) throws Exception {
-        deliverCallback = (consumerTag, delivery) -> {
+        DeliverCallback deliverCallback = (consumerTag, delivery) -> {
             boolean skip = false;
-            OUT result = deserializationSchema.deserialize(delivery.getBody());
             
+            byte[] bytes = rmqConnectionConfig.getOnDeserialize().onDeserialize(consumerTag, delivery);
+            
+            OUT result = deserializationSchema.deserialize(bytes);
             Envelope envelope = delivery.getEnvelope();
             
             if (deserializationSchema.isEndOfStream(result)) {

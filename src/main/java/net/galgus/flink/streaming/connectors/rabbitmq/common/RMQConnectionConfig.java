@@ -1,6 +1,8 @@
 package net.galgus.flink.streaming.connectors.rabbitmq.common;
 
 import com.rabbitmq.client.ConnectionFactory;
+import net.galgus.flink.streaming.connectors.rabbitmq.custom.OnDeserialize;
+import net.galgus.flink.streaming.connectors.rabbitmq.custom.SetupChannel;
 import org.apache.flink.util.Preconditions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,6 +30,9 @@ public class RMQConnectionConfig implements Serializable {
     private Integer requestedChannelMax;
     private Integer requestedFrameMax;
     private Integer requestedHeartbeat;
+
+    private OnDeserialize onDeserialize = OnDeserialize.DEFAULT;
+    private SetupChannel setupChannel = SetupChannel.DEFAULT; 
 
     public RMQConnectionConfig(String host, Integer port, String virtualHost, String username, String password, 
                                Integer networkRecoveryInterval, Boolean automaticRecovery, Boolean topologyRecovery, 
@@ -121,6 +126,22 @@ public class RMQConnectionConfig implements Serializable {
         return requestedHeartbeat;
     }
 
+    public OnDeserialize getOnDeserialize() {
+        return onDeserialize;
+    }
+
+    public void useOnDeserialize(OnDeserialize onDeserialize) {
+        this.onDeserialize = onDeserialize;
+    }
+
+    public SetupChannel getSetupChannel() {
+        return setupChannel;
+    }
+
+    public void useSetupChannel(SetupChannel setupChannel) {
+        this.setupChannel = setupChannel;
+    }
+
     public ConnectionFactory getConnectionFactory() throws URISyntaxException, 
             NoSuchAlgorithmException, KeyManagementException {
         
@@ -163,6 +184,17 @@ public class RMQConnectionConfig implements Serializable {
         return connectionFactory;
     }
     
+//    @Override
+//    public String toString() {
+//        StringBuilder stringBuilder = new StringBuilder();
+//        stringBuilder
+//                .append("host: " + host)
+//                .append("port: " + port)
+//                .append("virtualHost: " + virtualHost)
+//                .append("username: " + )
+//                .append("password: " + String.format("%*s" + password.length() +""), )
+//    }
+//    
     public static class Builder {
         private String host;
         private Integer port;
