@@ -4,6 +4,7 @@ import com.rabbitmq.client.Delivery;
 
 import java.io.Serializable;
 
+@FunctionalInterface
 public interface OnDeserialize extends Serializable {
     OnDeserialize DEFAULT = (consumerTag, delivery) -> delivery.getBody();
 
