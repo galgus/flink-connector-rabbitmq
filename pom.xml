@@ -12,7 +12,7 @@
     
     <properties>
         <apache.flink.version>1.9.0</apache.flink.version>
-        <rabbitmq.client.version>5.7.3</rabbitmq.client.version>
+        <rabbitmq.client.version>5.18.0</rabbitmq.client.version>
     </properties>
     
     <dependencies>
